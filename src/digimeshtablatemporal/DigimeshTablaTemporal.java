@@ -39,10 +39,24 @@ public class DigimeshTablaTemporal {
              //System.out.println(horaInicio);
 
              //System.out.println(args.length);
-            //java -jar ejecutable  <tipo BD> <tiempo atras> <ruta archivo configuracion>  
-            if(args.length < 3){
+            //java -jar ejecutable  <tipo BD> <tiempo atras> <ruta archivo configuracion>  <aws | noaws>
+            if(args.length < 4){
                 System.out.println("Numero insuficiente de argumentos");
                 System.exit(-1);
+            }
+            
+            boolean usarAWS = false;
+            System.out.println(args[3]);
+            if(args[3].contains("noaws")){
+                usarAWS = false;
+            }
+            else if(args[3].contains("aws")){
+                usarAWS = true;
+            }
+            else usarAWS = false;
+            
+            if(usarAWS){
+                System.out.println("Usando AWS");
             }
 
 
@@ -83,7 +97,7 @@ public class DigimeshTablaTemporal {
 
             //Nos conectamos a la base de datos
              StringBuilder url = null;
-
+             StringBuilder urlAWS = null;
             switch(tipoBD){
                 case MYSQL_DB:
                     url = new StringBuilder("jdbc:mysql://");
@@ -93,6 +107,18 @@ public class DigimeshTablaTemporal {
                     url.append(puertoDB);
                     url.append("/");
                     url.append(baseDeDatos);
+                    
+                    //Amazon Web Services DB
+                    if(usarAWS){
+                        urlAWS = new StringBuilder("jdbc:mysql://");
+                        Class.forName("com.mysql.jdbc.Driver").newInstance();
+                        urlAWS.append(conf.obtenerParametro(Configuracion.IP_AWS));
+                        urlAWS.append(":");
+                        urlAWS.append(puertoDB);
+                        urlAWS.append("/");
+                        urlAWS.append(baseDeDatos);
+                    }
+                    
                     break;
                 case ORACLE_DB:
                     url = new StringBuilder("jdbc:oracle:thin:@");
@@ -119,6 +145,12 @@ public class DigimeshTablaTemporal {
             //Creamos la conexion
             Connection conexion = DriverManager.getConnection(url.toString(), conf.obtenerParametro(Configuracion.USUARIO_BASE_DE_DATOS), conf.obtenerParametro(Configuracion.CLAVE_BASE_DE_DATOS));
             
+            //Conexion Amazon AWS
+            Connection conexionAWS = null;
+            if(usarAWS){
+                 conexionAWS= DriverManager.getConnection(urlAWS.toString(), conf.obtenerParametro(Configuracion.USUARIO_BASE_DE_DATOS), conf.obtenerParametro(Configuracion.CLAVE_BASE_DE_DATOS));
+            }
+            
             //
             if(conexion == null){
                 System.out.println("No nos pudimos conectar a la base de datos");
@@ -141,21 +173,33 @@ public class DigimeshTablaTemporal {
             Statement creacionStatement = conexion.createStatement();
             int status = creacionStatement.executeUpdate(consultaCreacion);
             
+            //AWS
+            if(usarAWS){
+                Statement creacionStatementAWS = conexionAWS.createStatement();
+                status = creacionStatementAWS.executeUpdate(consultaCreacion);
+                 creacionStatementAWS.close(); 
+            }
+            
            // System.out.println(status);
             creacionStatement.close();               
-
+                
 
             //Obtenemos las ultimas mediciones
-            String consultaSeleccion = "SELECT id_wasp, id_secret, frame_type, frame_number, sensor, value, TIMESTAMPADD(HOUR, -5, timestamp) as timestamp, raw, parser_type FROM " +  
-                                        conf.obtenerParametro(Configuracion.NOMBRE_TABLA_MEDICIONES) + " where timestamp between TIMESTAMPADD(MINUTE," + (tiempoAtras*-1)+" , UTC_TIMESTAMP()) and UTC_TIMESTAMP()";
+            String consultaSeleccion = "SELECT id_wasp, id_secret, frame_type, frame_number, sensor, value, timestamp, raw, parser_type FROM " +  
+                                        conf.obtenerParametro(Configuracion.NOMBRE_TABLA_MEDICIONES) + " where timestamp between TIMESTAMPADD(HOUR , -5, TIMESTAMPADD(MINUTE," + (tiempoAtras*-1)+ 
+                                        " , UTC_TIMESTAMP())) and TIMESTAMPADD(HOUR, -5, UTC_TIMESTAMP()) order by timestamp desc";
             
-            //System.out.println(consultaSeleccion);
+            System.out.println(consultaSeleccion);
             Statement seleccionStatement = conexion.createStatement();
-
+            
             ResultSet set;
             set = seleccionStatement.executeQuery(consultaSeleccion);
             
-            //Aqui tenemos ya  las medicions más actuales
+            System.out.println(consultaSeleccion + "\n\n");
+            
+            
+            
+            //Aqui tenemos ya  las medicions más actuales...Esta fallando aquí
             while(set.next()){
                 
                 //drop all
@@ -167,9 +211,12 @@ public class DigimeshTablaTemporal {
                                             "', value = " + set.getString("value") + ", timestamp = '" + set.getString("timestamp") + "',  raw = '0'"  +
                                             ", parser_type = " + set.getString("parser_type") + " WHERE id_wasp = '" + set.getString("id_wasp") + "' AND sensor = '" + set.getString("sensor") + "'";
                 
+                System.out.println(consultaUpdate + "\n\n");
+                
                 //System.out.println(consultaUpdate);
                 Statement updateStatement = conexion.createStatement();
-
+                
+                //Para servidor local
                 int filasAfectadas = updateStatement.executeUpdate(consultaUpdate);
 
                 //Si no se afectaron filas, es por que no exisitia el waspmote con el sensor, entonces lo isnertamos.
@@ -190,7 +237,38 @@ public class DigimeshTablaTemporal {
                     }
                     statementInsercion.close();
                 }
+                
                 updateStatement.close();
+                
+                if(usarAWS){
+                    //Para servidor AWS
+                    Statement updateStatementAWS = conexionAWS.createStatement();
+                    filasAfectadas = updateStatementAWS.executeUpdate(consultaUpdate);
+                
+
+                    //Si no se afectaron filas, es por que no exisitia el waspmote con el sensor, entonces lo isnertamos.
+                    if(filasAfectadas == 0){ 
+                        //TODO: insertar por que no existe...
+                        String consultaInsercion = "INSERT INTO " + conf.obtenerParametro(Configuracion.NOMBRE_TABLA_MEDICIONES_ACTUALES) + " (id_wasp, id_secret, frame_type, frame_number, sensor, value, timestamp, raw, parser_type)" + 
+                                                   " VALUES ('"  + set.getString("id_wasp") + "', '" + set.getString("id_secret") + "',  " +  set.getString("frame_type") + ", " + set.getString("frame_number") + 
+                                                   ", '" + set.getString("sensor") + "', '" + set.getString("value") + "', '" + set.getString("timestamp") + "', '0', "  +
+                                                   set.getString("parser_type") + " )";
+
+                        //System.out.println(consultaInsercion);
+
+                        Statement statementInsercionAWS = conexionAWS.createStatement();
+                        int filas = statementInsercionAWS.executeUpdate(consultaInsercion);
+
+                        if(filas == 0){
+                            System.out.println("No se pudo insertar el registro en el servidor AWS.");
+                        }
+                        statementInsercionAWS.close();
+                    }
+
+                    //Cerramos los statements...
+                    
+                    updateStatementAWS.close();
+                }
                 
             }
             set.close();

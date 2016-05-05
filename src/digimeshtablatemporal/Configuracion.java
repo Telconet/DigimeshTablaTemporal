@@ -15,6 +15,7 @@ public class Configuracion {
     
     //Strings que buscaremos en el archivo de configuracion
     public static final String IP_BASE_DE_DATOS = "ip-base-datos";
+    public static final String IP_AWS = "ip-aws";
     public static final String USUARIO_BASE_DE_DATOS = "usuario-base-datos";
     public static final String CLAVE_BASE_DE_DATOS = "clave-base-datos";
     public static final String NOMBRE_BASE_DATOS = "nombre-base-de-datos";
