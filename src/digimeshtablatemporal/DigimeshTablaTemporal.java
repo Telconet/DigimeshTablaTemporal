@@ -273,6 +273,7 @@ public class DigimeshTablaTemporal {
             }
             set.close();
             seleccionStatement.close();  
+            conexion.close();                   //Cerramos la conexion
         }
         catch(Exception e){
             e.printStackTrace();
