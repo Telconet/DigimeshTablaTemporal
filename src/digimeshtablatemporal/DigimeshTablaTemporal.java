@@ -5,13 +5,12 @@
 package digimeshtablatemporal;
 
 import java.sql.Connection;
-import java.sql.DatabaseMetaData;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.text.SimpleDateFormat;
 import java.util.Calendar;
-
+import java.sql.Timestamp;
 /**
  *
  * @author Eduardo
@@ -180,14 +179,55 @@ public class DigimeshTablaTemporal {
                  creacionStatementAWS.close(); 
             }
             
+            
+            
+            
+            
            // System.out.println(status);
-            creacionStatement.close();               
+            creacionStatement.close();  
+            
+            
+            //Consultamos el registro más actual
+            String consultaFecha = "SELECT timestamp FROM " + conf.obtenerParametro(Configuracion.NOMBRE_TABLA_MEDICIONES) + " order by timestamp desc limit 0,1";
+            Statement consultaFechaStatement = conexion.createStatement();
+            
+            ResultSet setFecha;
+            setFecha = consultaFechaStatement.executeQuery(consultaFecha);
+            
+            Timestamp fechaMasActual = null;
+            while(setFecha.next()){
+                fechaMasActual = setFecha.getTimestamp("timestamp");
+            }
+            
+            setFecha.close();
+            consultaFechaStatement.close();
+            
+            
+            
+            //Obtenemos las fechas
+            Calendar cal = Calendar.getInstance(); 
+            SimpleDateFormat antes = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+            SimpleDateFormat ahora = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+            
+            System.out.println(fechaMasActual.toString());
+            
+            
+            
+            cal.setTimeInMillis(fechaMasActual.getTime());
+            
+            String ahoraStr = antes.format(cal.getTime());      //Fecha/hora actual
+            System.out.println(ahoraStr);
+            
+            //antes
+            cal.add(Calendar.MINUTE, -1*tiempoAtras);
+            String antesStr = antes.format(cal.getTime());
+            System.out.println(antesStr);
                 
 
             //Obtenemos las ultimas mediciones
             String consultaSeleccion = "SELECT id_wasp, id_secret, frame_type, frame_number, sensor, value, timestamp, raw, parser_type FROM " +  
-                                        conf.obtenerParametro(Configuracion.NOMBRE_TABLA_MEDICIONES) + " where timestamp between TIMESTAMPADD(HOUR , -5, TIMESTAMPADD(MINUTE," + (tiempoAtras*-1)+ 
-                                        " , UTC_TIMESTAMP())) and TIMESTAMPADD(HOUR, -5, UTC_TIMESTAMP()) order by timestamp desc";
+                                        conf.obtenerParametro(Configuracion.NOMBRE_TABLA_MEDICIONES) + " where timestamp between \'"  + antesStr + "\' and \'" + ahoraStr + 
+                                        "\' order by timestamp desc";
             
             System.out.println(consultaSeleccion);
             Statement seleccionStatement = conexion.createStatement();
